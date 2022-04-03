@@ -36,6 +36,10 @@ dependencies:
   cupertino_icons: ^1.0.2
   path_provider:
   image_picker:
+  image_gallery_saver:
+  image:
+  share:
+  share_extend:
 
 dev_dependencies:
   flutter_test:

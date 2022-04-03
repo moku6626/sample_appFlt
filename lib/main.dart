@@ -1,6 +1,15 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:image/image.dart' as imgpack;
 import 'package:image_picker/image_picker.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+
+import 'package:share/share.dart';
+import 'package:share_extend/share_extend.dart';
 
 
 void main() {
@@ -51,14 +60,15 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  File? _image; //画像を入れる変数
+  File? _image; //変換前の画像を入れる変数
+  var rtchImage;
   final picker = ImagePicker();
+  final GlobalKey shareKey = GlobalKey();
 
   /// 画像が取れたら、setState()で更新する
   Future getImageFromGallery() async {
     final image = await picker.getImage(source: ImageSource.gallery);  // ==追加==
     setState(() {
-      // TODO 更新する処理を書く
       _image = File(image.path); // ==追加==
     });
   }
@@ -66,9 +76,73 @@ class _MyHomePageState extends State<MyHomePage> {
     final image = await picker.getImage(source: ImageSource.camera);  // ==追加==
 
     setState(() {
-      // TODO 更新する処理を書く
       _image = File(image.path); // ==追加==
     });
+  }
+  Future retouchImage() async {
+    imgpack.Image tempImage;
+
+    setState(() {
+       tempImage = imgpack.copyRotate(imgpack.decodeImage(_image!.readAsBytesSync())!,90); // 変換
+       rtchImage = imgpack.encodePng(tempImage);
+       //_rtchImage.writeAsBytes(tempImage.buffer.asUint8List(tempImage.offsetInBytes, tempImage.lengthInBytes));
+       //ImageGallerySaver.saveImage(tempImage.getBytes());
+       //_rtchImage = tempImage.getBytes();
+       //_rtchImage.writeAsBytes(tempList.writeAsBytesSync);
+       //print(tempList);
+       //_rtchImage!.writeAsBytesSync(tempImage.getBytes().buffer.asUint8List(tempImage.getBytes().offsetInBytes, tempImage.getBytes().lengthInBytes));
+       //print(_rtchImage);
+    });
+  }
+  Future saveRtchImage() async {
+    setState(() {
+      ImageGallerySaver.saveImage(rtchImage);
+    });
+  }
+  //Widgetを画像化する
+  Future<ByteData?> exportToImage(GlobalKey globalKey) async {
+  final boundary =
+  globalKey.currentContext?.findRenderObject() as RenderRepaintBoundary;
+  final image = await boundary.toImage(
+  pixelRatio: 3,
+  );
+  final byteData = await image.toByteData(
+  format: ui.ImageByteFormat.png,
+  );
+  return byteData;
+  }
+
+  //作成した画像をアプリ内のディレクトリへ保存しパスを取得
+  Future<File> getApplicationDocumentsFile(
+  String text, List<int> imageData) async {
+  final directory = await getApplicationDocumentsDirectory();
+
+  final exportFile = File('${directory.path}/$text.png');
+  if (!await exportFile.exists()) {
+  await exportFile.create(recursive: true);
+  }
+  final file = await exportFile.writeAsBytes(imageData);
+  return file;
+  }
+
+  //ディレクトへのパスを取得してシェア
+  void shareImageAndText(String text, GlobalKey globalKey) async {
+  //shareする際のテキスト
+  try {
+  //byte dataに
+  final bytes = await exportToImage(globalKey);
+  final widgetImageData =
+  bytes?.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
+  //App directoryファイルに保存
+  final applicationDocumentsFile =
+  await getApplicationDocumentsFile(text, widgetImageData!);
+
+  final path = applicationDocumentsFile.path;
+  await ShareExtend.share(path, "image");
+  //applicationDocumentsFile.delete();
+  } catch (error) {
+  print(error);
+  }
   }
 
   @override
@@ -78,13 +152,14 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
       ),
       body: Center(
+      child: SingleChildScrollView(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: Container(
-                  width: 300,
+                  height: 300,
                   child: _image == null
                       ? Text('No image selected.')
                       : Image.file(_image!)),
@@ -92,20 +167,101 @@ class _MyHomePageState extends State<MyHomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                FloatingActionButton(
-                  onPressed: getImageFromCamera,
-                  tooltip: 'Pick Image From Camera',
-                  child: Icon(Icons.add_a_photo),
+                //カメラボタン(カメラから写真を取得)
+                ElevatedButton.icon(
+                  icon: const Icon(
+                    Icons.add_a_photo,
+                    color: Colors.white,
+                  ),
+                  label: const Text('Camera'),
+                  style: ElevatedButton.styleFrom(
+                    primary: Colors.blue,
+                    onPrimary: Colors.white,
+                  ),
+                  onPressed:getImageFromCamera,
                 ),
-                FloatingActionButton(
+                //ギャラリーボタン(ギャラリーから写真を選択)
+                ElevatedButton.icon(
+                  icon: const Icon(
+                    Icons.photo_library,
+                    color: Colors.white,
+                  ),
+                  label: const Text('Gallery'),
+                  style: ElevatedButton.styleFrom(
+                    primary: Colors.blue,
+                    onPrimary: Colors.white,
+                  ),
                   onPressed: getImageFromGallery,
-                  tooltip: 'Pick Image From Gallery',
-                  child: Icon(Icons.photo_library),
+                ),
+                //レタッチボタン
+                ElevatedButton.icon(
+                  icon: const Icon(
+                    Icons.auto_fix_high ,
+                    color: Colors.white,
+                  ),
+                  label: const Text('Retouch'),
+                  style: ElevatedButton.styleFrom(
+                    primary: Colors.green,
+                    onPrimary: Colors.white,
+                  ),
+                  onPressed: _image == null
+                      ? null
+                      : retouchImage,
                 ),
               ],
-            )
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Container(
+                  height: 300,
+                child: RepaintBoundary(
+                    key: shareKey,//追加
+                  child: rtchImage == null
+                      ? Text('No image selected.')
+                      : Image.memory(rtchImage!)),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                //保存ボタン(レタッチ画像の保存)
+                ElevatedButton.icon(
+                  icon: const Icon(
+                    Icons.download,
+                    color: Colors.white,
+                  ),
+                  label: const Text('Save'),
+                  style: ElevatedButton.styleFrom(
+                    primary: Colors.blue,
+                    onPrimary: Colors.white,
+                  ),
+                  onPressed:rtchImage==null
+                      ? null
+                      : saveRtchImage,
+                ),
+                //SNS共有ボタン
+                ElevatedButton.icon(
+                  icon: const Icon(
+                    Icons.share,
+                    color: Colors.white,
+                  ),
+                  label: const Text('Share'),
+                  style: ElevatedButton.styleFrom(
+                    primary: Colors.blue,
+                    onPrimary: Colors.white,
+                  ),
+                  onPressed:rtchImage==null
+                      ? null
+                      : () => shareImageAndText(
+                      'sample_widget',
+                      shareKey,
+                ),
+                ),
+              ],
+            ),
           ],
         ),
+      ),
       ),
     );
   }
