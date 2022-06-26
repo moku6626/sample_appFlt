@@ -1,11 +1,15 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as imgpack;
 import 'package:image_picker/image_picker.dart';
+import 'package:multi_image_picker2/multi_image_picker2.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart';
+import 'package:http/http.dart' as http;
 import 'dart:io';
 
 import 'package:share/share.dart';
@@ -60,31 +64,49 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  File? _image; //変換前の画像を入れる変数
+  XFile? _image; //変換前の画像を入れる変数
+  List<XFile>? _images=[];
+  int? _tap_image_num;
   var rtchImage;
-  final picker = ImagePicker();
+  final _picker = ImagePicker();
   final GlobalKey shareKey = GlobalKey();
 
   /// 画像が取れたら、setState()で更新する
   Future getImageFromGallery() async {
-    final image = await picker.getImage(source: ImageSource.gallery);  // ==追加==
-    setState(() {
-      _image = File(image.path); // ==追加==
-    });
+    //final image = await picker.getImage(source: ImageSource.gallery);  // ギャラリーから画像取得
+    try {
+      final List<XFile>? images = await _picker.pickMultiImage();
+      //final List<Asset>? images = await MultiImagePicker.pickImages(maxImages:300);
+
+      if (images != null) {
+        _tap_image_num=null;
+        _images!.clear();
+        _images!.addAll(images);
+        setState(() {});
+      } else {
+        print("No image is selected.");
+      }
+    }catch (e){
+      print("error while picking file.");
+    }
   }
   Future getImageFromCamera() async {
-    final image = await picker.getImage(source: ImageSource.camera);  // ==追加==
+    final XFile? image = await _picker.pickImage(source: ImageSource.camera);  // カメラから画像取得
 
     setState(() {
-      _image = File(image.path); // ==追加==
+      if(image!=null) {
+        _tap_image_num=null;
+        _images!.clear();
+        _images!.add(image);
+      }
     });
   }
   Future retouchImage() async {
     imgpack.Image tempImage;
+    tempImage = imgpack.copyRotate(imgpack.decodeImage(File(_images![_tap_image_num!].path).readAsBytesSync())!,90); // 変換
+    rtchImage = imgpack.encodePng(tempImage);
 
     setState(() {
-       tempImage = imgpack.copyRotate(imgpack.decodeImage(_image!.readAsBytesSync())!,90); // 変換
-       rtchImage = imgpack.encodePng(tempImage);
        //_rtchImage.writeAsBytes(tempImage.buffer.asUint8List(tempImage.offsetInBytes, tempImage.lengthInBytes));
        //ImageGallerySaver.saveImage(tempImage.getBytes());
        //_rtchImage = tempImage.getBytes();
@@ -92,6 +114,36 @@ class _MyHomePageState extends State<MyHomePage> {
        //print(tempList);
        //_rtchImage!.writeAsBytesSync(tempImage.getBytes().buffer.asUint8List(tempImage.getBytes().offsetInBytes, tempImage.getBytes().lengthInBytes));
        //print(_rtchImage);
+    });
+  }
+  Future changeImage() async {
+    imgpack.Image tempImage;
+    //画像ファイルをバイトのリストとして読み込む
+    List<int> imageBytes = File(_images![_tap_image_num!].path).readAsBytesSync();
+    //base64にエンコード
+    String base64Image = base64Encode(imageBytes);
+    debugPrint('==================================');
+    //サーバー側で設定してあるURLを選択
+    Uri url = Uri.parse('http://127.0.0.1:5000/detect');
+
+    String body = json.encode({
+      'post_img': base64Image,
+    });
+
+    //send to backend
+    //サーバーにデータをPOST,予測画像をbase64に変換したものを格納下JSONで返ってくる
+    Response response = await http.post(url,body: body);
+
+    //base64 -> file
+    final data = json.decode(response.body);
+    String imageBase64 =data['result'];
+    //バイトのリストに変換
+    Uint8List bytes = base64Decode(imageBase64);
+    //バイトから画像を生成
+    Image image = Image.memory(bytes);
+
+    setState(() {
+      rtchImage = image;
     });
   }
   Future saveRtchImage() async {
@@ -159,10 +211,35 @@ class _MyHomePageState extends State<MyHomePage> {
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: Container(
-                  height: 300,
-                  child: _image == null
+                  height: 100,
+                  child: _images == null
                       ? Text('No image selected.')
-                      : Image.file(_image!)),
+                      : SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child:Row(
+                              children: [
+                                for (var i=0 ; i < _images!.length ; i++) ...[
+                                    GestureDetector(
+                                        onTap:() {
+                                          setState(() {
+                                            _tap_image_num = i;
+                                          });
+                                        },
+                                        child: Container(
+                                            child:Image.file(File(_images![i].path), fit: BoxFit.cover,),
+                                        ),
+                                    ),
+                                ]
+                              ],
+                            ),
+                  )
+              ),
+            ),
+            Container(
+              height:200,
+              child: _tap_image_num==null
+                  ? Text('')
+                  : Image.file(File(_images![_tap_image_num!].path)),
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -204,9 +281,10 @@ class _MyHomePageState extends State<MyHomePage> {
                     primary: Colors.green,
                     onPrimary: Colors.white,
                   ),
-                  onPressed: _image == null
+                  onPressed: _tap_image_num == null
                       ? null
-                      : retouchImage,
+                      //: retouchImage,
+                      : changeImage,
                 ),
               ],
             ),
