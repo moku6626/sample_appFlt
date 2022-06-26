@@ -90,6 +90,8 @@ class _MyHomePageState extends State<MyHomePage> {
       print("error while picking file.");
     }
   }
+
+  ///cameraから画像取得
   Future getImageFromCamera() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.camera);  // カメラから画像取得
 
@@ -101,28 +103,26 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     });
   }
+
+  ///画像変換
   Future retouchImage() async {
     imgpack.Image tempImage;
+    //仮：画像を90度回転させる(削除予定)
     tempImage = imgpack.copyRotate(imgpack.decodeImage(File(_images![_tap_image_num!].path).readAsBytesSync())!,90); // 変換
-    rtchImage = imgpack.encodePng(tempImage);
 
     setState(() {
-       //_rtchImage.writeAsBytes(tempImage.buffer.asUint8List(tempImage.offsetInBytes, tempImage.lengthInBytes));
-       //ImageGallerySaver.saveImage(tempImage.getBytes());
-       //_rtchImage = tempImage.getBytes();
-       //_rtchImage.writeAsBytes(tempList.writeAsBytesSync);
-       //print(tempList);
-       //_rtchImage!.writeAsBytesSync(tempImage.getBytes().buffer.asUint8List(tempImage.getBytes().offsetInBytes, tempImage.getBytes().lengthInBytes));
-       //print(_rtchImage);
+      rtchImage = imgpack.encodePng(tempImage);
     });
   }
+
+  ///サーバー側で画像変換するコード(動作確認前のため未使用)
   Future changeImage() async {
     imgpack.Image tempImage;
     //画像ファイルをバイトのリストとして読み込む
     List<int> imageBytes = File(_images![_tap_image_num!].path).readAsBytesSync();
     //base64にエンコード
     String base64Image = base64Encode(imageBytes);
-    debugPrint('==================================');
+    //debugPrint('==================================');
     //サーバー側で設定してあるURLを選択
     Uri url = Uri.parse('http://127.0.0.1:5000/detect');
 
@@ -146,57 +146,56 @@ class _MyHomePageState extends State<MyHomePage> {
       rtchImage = image;
     });
   }
+
+  ///レタッチ画像の保存
   Future saveRtchImage() async {
     setState(() {
       ImageGallerySaver.saveImage(rtchImage);
     });
   }
-  //Widgetを画像化する
+
+  ///Widgetを画像化する
   Future<ByteData?> exportToImage(GlobalKey globalKey) async {
-  final boundary =
-  globalKey.currentContext?.findRenderObject() as RenderRepaintBoundary;
-  final image = await boundary.toImage(
-  pixelRatio: 3,
-  );
-  final byteData = await image.toByteData(
-  format: ui.ImageByteFormat.png,
-  );
-  return byteData;
+    final boundary = globalKey.currentContext?.findRenderObject() as RenderRepaintBoundary;
+    final image = await boundary.toImage(
+      pixelRatio: 3,
+    );
+    final byteData = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
+    return byteData;
   }
 
-  //作成した画像をアプリ内のディレクトリへ保存しパスを取得
-  Future<File> getApplicationDocumentsFile(
-  String text, List<int> imageData) async {
-  final directory = await getApplicationDocumentsDirectory();
+  ///作成した画像をアプリ内のディレクトリへ保存しパスを取得
+  Future<File> getApplicationDocumentsFile(String text, List<int> imageData) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final exportFile = File('${directory.path}/$text.png');
+    if (!await exportFile.exists()) {
+      await exportFile.create(recursive: true);
+    }
+    final file = await exportFile.writeAsBytes(imageData);
 
-  final exportFile = File('${directory.path}/$text.png');
-  if (!await exportFile.exists()) {
-  await exportFile.create(recursive: true);
-  }
-  final file = await exportFile.writeAsBytes(imageData);
-  return file;
+    return file;
   }
 
-  //ディレクトへのパスを取得してシェア
+  ///ディレクトへのパスを取得してシェア
   void shareImageAndText(String text, GlobalKey globalKey) async {
-  //shareする際のテキスト
-  try {
-  //byte dataに
-  final bytes = await exportToImage(globalKey);
-  final widgetImageData =
-  bytes?.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
-  //App directoryファイルに保存
-  final applicationDocumentsFile =
-  await getApplicationDocumentsFile(text, widgetImageData!);
-
-  final path = applicationDocumentsFile.path;
-  await ShareExtend.share(path, "image");
-  //applicationDocumentsFile.delete();
-  } catch (error) {
-  print(error);
+    //shareする際のテキスト
+    try {
+      //byte dataに
+      final bytes = await exportToImage(globalKey);
+      final widgetImageData = bytes?.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
+      //App directoryファイルに保存
+      final applicationDocumentsFile = await getApplicationDocumentsFile(text, widgetImageData!);
+      final path = applicationDocumentsFile.path;
+      await ShareExtend.share(path, "image");
+      //applicationDocumentsFile.delete();
+    } catch (error) {
+    print(error);
+    }
   }
-  }
-
+  ///インターフェース
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -283,8 +282,8 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                   onPressed: _tap_image_num == null
                       ? null
-                      //: retouchImage,
-                      : changeImage,
+                      : retouchImage,
+                      //: changeImage,
                 ),
               ],
             ),
